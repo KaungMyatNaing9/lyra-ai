@@ -51,6 +51,10 @@ if 'assessment_mode' not in st.session_state:
 if 'flashcards' not in st.session_state:
     st.session_state.flashcards = []
     st.session_state.flashcard_topic = ""
+    st.session_state.flashcard_states = {}
+
+if 'flashcard_states' not in st.session_state:
+    st.session_state.flashcard_states = {}
 
 # ===============================
 # Helper Functions
@@ -90,7 +94,7 @@ st.markdown("*Personalized learning support available 24/7*")
 st.sidebar.title("Learning Modes")
 mode = st.sidebar.radio(
     "Choose your learning mode:",
-    ["💬 Q&A Support", "📝 Exam Preparation", "📊 Progress Review", "🎯 Pre-Assessment"]
+    ["💬 Q&A Support", "📝 Exam Preparation", "🃏 Flashcards", "📊 Progress Review", "🎯 Pre-Assessment"]
 )
 
 # Display progress dashboard
@@ -230,6 +234,75 @@ if uploaded_files:
                                 st.rerun()
                         else:
                             st.rerun()
+    
+    elif mode == "🃏 Flashcards":
+        st.subheader("Flashcard Studio")
+        st.write("Build a rapid-review deck from your uploaded materials and tap each card to flip between prompt and answer.")
+        
+        flashcard_topic = st.text_input(
+            "Topic or concept for flashcards:",
+            key="flashcard_topic_input"
+        )
+        num_flashcards = st.slider("Number of flashcards:", 3, 12, 6, key="flashcard_count")
+        
+        action_col1, action_col2 = st.columns(2)
+        with action_col1:
+            generate_clicked = st.button("✨ Generate Flashcards", type="primary", use_container_width=True)
+        with action_col2:
+            clear_clicked = st.button("🗑️ Clear Deck", use_container_width=True)
+        
+        if generate_clicked:
+            if not flashcard_topic.strip():
+                st.warning("Please enter a topic to focus the flashcards.")
+            else:
+                with st.spinner("Creating flashcards from your materials..."):
+                    results = retrieve_relevant_chunks(
+                        flashcard_topic, embeddings, vectorizer, chunks, top_k=6
+                    )
+                    context = "\n\n".join([chunk for chunk, score in results])
+                    
+                    if not context.strip():
+                        st.error("No relevant material found for that topic. Try a different keyword.")
+                    else:
+                        cards = generate_flashcards(context, flashcard_topic, num_flashcards)
+                        if cards:
+                            st.session_state.flashcards = cards
+                            st.session_state.flashcard_topic = flashcard_topic
+                            st.session_state.flashcard_states = {i: False for i in range(len(cards))}
+                        else:
+                            st.error("Could not generate flashcards. Please try again.")
+        
+        if clear_clicked:
+            st.session_state.flashcards = []
+            st.session_state.flashcard_topic = ""
+            st.session_state.flashcard_states = {}
+        
+        if st.session_state.flashcards:
+            st.success(f"Showing {len(st.session_state.flashcards)} flashcards for '{st.session_state.flashcard_topic}'. Tap each card to flip it!")
+            
+            card_columns = st.columns(2)
+            for idx, card in enumerate(st.session_state.flashcards):
+                column = card_columns[idx % 2]
+                with column:
+                    st.markdown(f"**Card {idx + 1}**")
+                    flipped = st.session_state.flashcard_states.get(idx, False)
+                    card_box = st.container()
+                    
+                    flip_label = "Tap to reveal answer 🔁" if not flipped else "Tap to view prompt ↩️"
+                    if st.button(flip_label, key=f"flip_btn_{idx}", use_container_width=True):
+                        st.session_state.flashcard_states[idx] = not flipped
+                        flipped = st.session_state.flashcard_states[idx]
+                    
+                    with card_box:
+                        if flipped:
+                            st.success(card.get('back', 'No answer provided'))
+                        else:
+                            st.info(card.get('front', ''))
+                        
+                        if card.get('tip'):
+                            st.caption(f"💡 Tip: {card['tip']}")
+        else:
+            st.info("Generate flashcards to start a quick recall session.")
     
     elif mode == "📊 Progress Review":
         st.subheader("Your Learning Journey")
@@ -454,46 +527,6 @@ if uploaded_files:
                         st.rerun()
                     else:
                         st.error("Could not generate questions. Please try a different topic or check your course materials.")
-
-        st.markdown("---")
-        st.subheader("🃏 Flashcard Sprint")
-        st.write("Generate quick front/back cards to reinforce key ideas before your assessment.")
-        
-        flashcard_topic = st.text_input(
-            "Topic or concept for flashcards:",
-            key="flashcard_topic_input"
-        )
-        num_flashcards = st.slider("Number of flashcards:", 3, 10, 5, key="flashcard_count")
-        
-        if st.button("Generate Flashcards", key="generate_flashcards_btn"):
-            if not flashcard_topic.strip():
-                st.warning("Please enter a topic to focus the flashcards.")
-            else:
-                with st.spinner("Creating flashcards from your materials..."):
-                    results = retrieve_relevant_chunks(
-                        flashcard_topic, embeddings, vectorizer, chunks, top_k=6
-                    )
-                    context = "\n\n".join([chunk for chunk, score in results])
-                    
-                    if not context.strip():
-                        st.error("No relevant material found for that topic. Try a different keyword.")
-                    else:
-                        cards = generate_flashcards(context, flashcard_topic, num_flashcards)
-                        if cards:
-                            st.session_state.flashcards = cards
-                            st.session_state.flashcard_topic = flashcard_topic
-                        else:
-                            st.error("Could not generate flashcards. Please try again.")
-        
-        if st.session_state.flashcards:
-            st.success(f"Showing {len(st.session_state.flashcards)} flashcards for '{st.session_state.flashcard_topic}'.")
-            for idx, card in enumerate(st.session_state.flashcards, 1):
-                with st.expander(f"Flashcard {idx}: {card.get('front', 'Prompt')}"):
-                    front_col, back_col = st.columns(2)
-                    front_col.info(card.get('front', ''))
-                    back_col.success(card.get('back', ''))
-                    if card.get('tip'):
-                        st.caption(f"💡 Tip: {card['tip']}")
 
 else:
     st.info("👆 Please upload your course materials to get started with Lyra!")
